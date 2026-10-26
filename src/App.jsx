@@ -425,7 +425,8 @@ function storedViewer() {
 
 export default function App() {
   const [page, setPageState] = useState(pageFromHash);
-  const [open, setOpen] = useState(false);
+  // Labels show by default on wider screens so sections like Call Calibration are easy to find.
+  const [open, setOpen] = useState(() => window.innerWidth >= 900);
   const [week, setWeek] = useState(WEEKS[1]);
   // Demo sign-in: the look-alike has no real accounts, so Call Calibration lets you switch user.
   const [viewer, setViewerState] = useState(storedViewer);
