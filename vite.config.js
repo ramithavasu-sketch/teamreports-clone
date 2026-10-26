@@ -5,4 +5,13 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: '/teamreports-clone/',
+  // Two pages: Team Reports, and Call Calibration on its own link (/call-calibration/).
+  build: {
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        calibration: 'call-calibration/index.html',
+      },
+    },
+  },
 })

@@ -12,7 +12,9 @@ npm run build
 
 ## Call Calibration module
 
-A new sidebar section, **Call Calibration**, with: My Assigned Calibrations, Create Calibration, Upcoming Sessions, Completed Sessions, and Calibration Results and Reports. It supports three formats: **Blind Session**, **Team Session** and **Agent Session**.
+Standalone link (no Team Reports sidebar, for linking from Team Reports later): https://ramithavasu-sketch.github.io/teamreports-clone/call-calibration/. Deep links work too, e.g. `…/call-calibration/#cal:reports`.
+
+Also available as a sidebar section, **Call Calibration**, with: My Assigned Calibrations, Create Calibration, Upcoming Sessions, Completed Sessions, and Calibration Results and Reports. It supports three formats: **Blind Session**, **Team Session** and **Agent Session**.
 
 ### What exists in this app (inspection, 27 Oct 2026)
 
