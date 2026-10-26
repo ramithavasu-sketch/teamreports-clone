@@ -10,6 +10,10 @@ npm run test:db    # Call Calibration database tests (needs a local Postgres)
 npm run build
 ```
 
+## CallGuard AI (prototype)
+
+Sidebar page **CallGuard AI**, also on its own link: https://ramithavasu-sketch.github.io/teamreports-clone/callguard/. A self-contained QCP early-screening prototype in `public/callguard/index.html` (fictional calls, simulated audio findings clearly labelled, real rule checks on transcripts, human QA review controls). Review decisions are saved only in the viewer's browser. It does not read or write Team Reports data.
+
 ## Call Calibration module
 
 Standalone link (no Team Reports sidebar, for linking from Team Reports later): https://ramithavasu-sketch.github.io/teamreports-clone/call-calibration/. Deep links work too, e.g. `…/call-calibration/#cal:reports`.
