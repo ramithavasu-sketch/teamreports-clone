@@ -23,11 +23,14 @@ h1, h2, h3, h4 { margin: 0; }
 /* Sidebar */
 .sidebar { width: 44px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column;
   align-items: center; padding: 10px 0; position: sticky; top: 0; height: 100vh; transition: width .2s; z-index: 5; flex-shrink: 0; }
-.sidebar.open { width: 200px; align-items: stretch; padding: 10px 8px; }
+.sidebar.open { width: 230px; align-items: stretch; padding: 10px 8px; }
 .sidebar nav { display: flex; flex-direction: column; gap: 4px; margin-top: 18px; flex: 1; }
 .nav-btn { display: flex; align-items: center; gap: 10px; border: 0; background: none; padding: 5px; border-radius: 7px;
   cursor: pointer; color: #3a4252; white-space: nowrap; }
 .nav-btn:hover, .nav-btn.active { background: #eef0f4; }
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+.nav-btn.nav-sub { padding: 4px 6px 4px 34px; font-size: 12px; white-space: normal; text-align: left; color: #5a6274; }
+.nav-btn.nav-sub.active { color: var(--blue); }
 .me { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 
 .content { flex: 1; min-width: 0; }
