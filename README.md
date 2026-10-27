@@ -11,7 +11,7 @@ npm run build
 
 ## CallGuard AI (prototype)
 
-Sidebar page **CallGuard AI**, also on its own link: https://ramithavasu-sketch.github.io/teamreports-clone/callguard/. A self-contained QCP early-screening prototype in `public/callguard/index.html` (fictional calls, simulated audio findings clearly labelled, real rule checks on transcripts, human QA review controls). Review decisions are saved only in the viewer's browser. It does not read or write Team Reports data.
+Sidebar page **CallGuard AI**, also on its own link: https://ramithavasu-sketch.github.io/teamreports-clone/callguard/. `public/callguard/index.html` is a self-contained React prototype (fictional calls, simulated AI screening, human QA review) that compiles in the browser and loads React, Tailwind and Babel from public CDNs, so it needs an internet connection. It keeps its data in the viewer's browser and does not read or write Team Reports data.
 
 ## CX QA Calibration (prototype)
 
