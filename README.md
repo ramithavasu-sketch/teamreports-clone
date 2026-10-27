@@ -13,6 +13,8 @@ npm run build
 
 Sidebar page **CallGuard AI**, also on its own link: https://ramithavasu-sketch.github.io/teamreports-clone/callguard/. `public/callguard/index.html` is a self-contained React prototype (fictional calls, simulated AI screening, human QA review) that compiles in the browser and loads React, Tailwind and Babel from public CDNs, so it needs an internet connection. It keeps its data in the viewer's browser and does not read or write Team Reports data.
 
+**Upload Call** (stereo recordings): the CX agent is taken from the right channel and the caller from the left (switchable in Rules & Settings). Each channel's speech is found by signal level and transcribed on the device with Whisper base.en (transformers.js, model downloaded once from Hugging Face), giving a full transcript labelled by speaker. If the agent channel has no speech, or the agent never speaks after the caller's first turn, the call is flagged **High Risk** (`No Interaction`). Sources are embedded as JSON in the page; the new code is in `src/services/stereoTranscriber.ts` and `src/components/upload/UploadCallModal.tsx`. Synthetic test calls: `public/callguard/samples/`.
+
 ## CX QA Calibration (prototype)
 
 Own link: https://ramithavasu-sketch.github.io/teamreports-clone/call-calibration/ (also shown inside Team Reports under **Call Calibration**). Modelled on the CX QA Calibration prototype layout: Dashboard, QA Calibration sessions, Reports and Guidelines.
