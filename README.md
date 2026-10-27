@@ -17,7 +17,13 @@ Sidebar page **CallGuard AI**, also on its own link: https://ramithavasu-sketch.
 
 Own link: https://ramithavasu-sketch.github.io/teamreports-clone/call-calibration/ (also shown inside Team Reports under **Call Calibration**). Modelled on the CX QA Calibration prototype layout: Dashboard, QA Calibration sessions, Reports and Guidelines.
 
-How a session works:
+Three formats:
+
+- **Blind Session** – the flow below: independent evaluations, lock, reveal, discussion.
+- **Team Session** – reviewers score the call together in a meeting (meeting link, attendance). The facilitator starts the session, logs discussion points and records the agreed verdict. Optional **blind pre-review** adds the independent evaluation and reveal steps first.
+- **Agent Session** – like a Team Session, plus the agent's name and the original QA verdict on the call, "QA only" discussion points, coaching points and agreed expectations. **Agent's view** previews what the agent sees: their original verdict vs the outcome (once completed), coaching, shared points and their own actions — never reviewer evaluations or QA-only notes.
+
+Agreement reports only use sessions with independent evaluations. How a Blind Session works:
 
 1. **Session details** – name, Connection ID, date/time, facilitator, reviewers A/B/C. Blind evaluation, lock after submission and reveal-after-all-submit are always on.
 2. **Reviewer evaluation** – each reviewer gives Soft Skills and Technical Skills an overall verdict (Good Job / Not Yet) and adds observations (QA parameter, evidence timestamp like `00:42` or `01:15–01:30`, Met / Not Met, evidence). Submitting locks it. A "switch reviewer" control simulates each reviewer; it is not real sign-in.

@@ -1,15 +1,59 @@
 import { useState } from 'react';
 import { store } from './store.js';
-import { SECTIONS, VERDICTS, FINDINGS, OWNERS, ACTION_STATUS, analyse, sectionName, emptyEvaluation } from './model.js';
-import { Icon, StatusBadge, Verdict, Finding, Locked, Card, ErrorNote, Empty, Toggle, fmtDate, fmtTime, fmtStamp } from './ui.jsx';
+import { SECTIONS, VERDICTS, FINDINGS, ACTION_STATUS, FORMATS, analyse, sectionName, emptyEvaluation, ownersFor, rulesFor } from './model.js';
+import { Icon, StatusBadge, FormatBadge, Verdict, Finding, Locked, Card, ErrorNote, Empty, Toggle, fmtDate, fmtTime, fmtStamp } from './ui.jsx';
 
-const TABS = [['details', 'Session details'], ['evaluate', 'Reviewer evaluation'], ['reveal', 'Reveal & discussion'], ['summary', 'Summary & actions']];
+const tabsFor = (s) => [['details', 'Session details'],
+  ['evaluate', s.needsEvaluations ? 'Reviewer evaluation' : 'Meeting & attendance'],
+  ['reveal', s.needsEvaluations ? 'Reveal & discussion' : 'Discussion'],
+  ['summary', 'Summary & actions']];
 
 function tabDone(s, key) {
   if (key === 'details') return s.status !== 'draft';
-  if (key === 'evaluate') return s.submitted === s.required;
-  if (key === 'reveal') return !!s.revealedAt;
+  if (key === 'evaluate') return s.needsEvaluations ? s.submitted === s.required : !!s.startedAt;
+  if (key === 'reveal') return s.needsEvaluations ? !!s.revealedAt : s.status === 'completed';
   return s.status === 'completed';
+}
+
+function confirmStart(s, refresh, setDialog) {
+  setDialog({
+    title: `Start this ${FORMATS[s.format].name}?`, confirm: 'Start session',
+    body: 'Opens the discussion log and final interpretation. Track attendance while the meeting runs.',
+    onConfirm: () => { store.startSession(s.id); refresh(); go(`calibration/${s.id}/reveal`); },
+  });
+}
+
+const go = (path) => { window.location.hash = `#/${path}`; window.scrollTo(0, 0); };
+
+function OriginalVsFinal({ s, final }) {
+  if (!s.original) return null;
+  return (
+    <table className="cx-table compact">
+      <thead><tr><th /><th>Original QA evaluation</th><th>After calibration</th></tr></thead>
+      <tbody>{SECTIONS.map((x) => (
+        <tr key={x.id}><td className="strong">{x.name}</td><td><Verdict value={s.original[x.id]} /></td>
+          <td>{final?.[x.id] ? <Verdict value={final[x.id]} highlight={final[x.id] !== s.original[x.id]} /> : <span className="cx-muted">Pending</span>}</td></tr>
+      ))}</tbody>
+    </table>
+  );
+}
+
+function Attendance({ s, refresh }) {
+  const people = store.participants(s.id);
+  const canMark = s.status === 'in_discussion';
+  return (
+    <ul className="cx-reviewers">
+      {people.map((p) => (
+        <li key={p.name}>
+          <div><b>{p.name}</b></div>
+          {canMark
+            ? <label className="cx-row small"><input type="checkbox" checked={p.attended} onChange={(e) => { store.setAttendance(s.id, p.name, e.target.checked); refresh(); }} /> Attended</label>
+            : <span className={`cx-badge ${p.attended ? 'act-completed' : 'act-open'}`}>{p.attended ? 'Attended' : s.status === 'completed' ? 'Not recorded' : 'Not started'}</span>}
+          <span />
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /* ---------- shared: original verdicts table ---------- */
@@ -51,17 +95,15 @@ function sectionSentence(x) {
 
 /* ---------- 1. details ---------- */
 
-function Details({ s }) {
+function Details({ s, refresh, setDialog }) {
+  if (!s.needsEvaluations) return <LiveDetails s={s} refresh={refresh} setDialog={setDialog} />;
   const progress = store.progress(s.id);
   const ready = s.submitted === s.required;
   return (
     <div className="cx-grid-side">
       <Card title="Session details">
         <dl className="cx-dl">
-          {[['Session name', s.name], ['Connection ID', <span className="mono" key="c">{s.connectionId}</span>], ['Date', fmtDate(s.date)], ['Time', fmtTime(s.time)],
-            ['Facilitator', s.facilitator], ['Reviewers', s.reviewers.map((r) => `Reviewer ${r}`).join(', ')], ['Blind evaluation', 'Enabled'],
-            ['Lock after submission', 'Enabled'], ['Reveal evaluations', 'Only after all required reviewers submit'], ['Evaluation sections', 'Soft Skills and Technical Skills']]
-            .map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
+          {detailRows(s).map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
         </dl>
       </Card>
       <div>
@@ -86,6 +128,45 @@ function Details({ s }) {
               : <a className={`cx-btn ${ready ? '' : 'disabled'}`} aria-disabled={!ready} href={ready ? `#/calibration/${s.id}/reveal` : undefined}
                 title={ready ? '' : 'Available once every reviewer has submitted'}>Reveal evaluations</a>}
             {!ready && <small className="cx-muted">Reveal unlocks when all {s.required} reviewers have submitted.</small>}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function detailRows(s) {
+  return [['Session name', s.name], ['Connection ID', <span className="mono" key="c">{s.connectionId}</span>], ['Date', fmtDate(s.date)], ['Time', fmtTime(s.time)],
+    ['Facilitator', s.facilitator], ['Reviewers', s.reviewers.map((r) => `Reviewer ${r}`).join(', ')],
+    ...(s.agentName ? [['Agent', s.agentName]] : []),
+    ...(s.format !== 'blind' ? [['Meeting link', s.meetingLink ? <a key="m" className="cx-link" href={s.meetingLink} target="_blank" rel="noreferrer noopener">Join meeting ↗</a> : 'Not added']] : []),
+    ...rulesFor(s)];
+}
+
+// Team / Agent Sessions without pre-review: no evaluations, the group meets.
+function LiveDetails({ s, refresh, setDialog }) {
+  const final = store.finalInterpretation(s.id);
+  return (
+    <div className="cx-grid-side">
+      <Card title="Session details">
+        <dl className="cx-dl">{detailRows(s).map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
+      </Card>
+      <div>
+        {s.format === 'agent' && (
+          <Card title="Original QA evaluation" sub="The verdict the agent received. The calibration outcome is recorded separately.">
+            <OriginalVsFinal s={s} final={s.status === 'completed' ? final : null} />
+            <a className="cx-btn ghost small" href={`#/calibration/${s.id}/agent`}><Icon name="user" size={14} /> Preview the agent’s view</a>
+          </Card>
+        )}
+        <Card title="Participants" sub={s.status === 'scheduled' ? 'Attendance is recorded once the session starts.' : 'Attendance for this meeting.'}>
+          <Attendance s={s} refresh={refresh} />
+        </Card>
+        <Card title="Next step">
+          <div className="cx-stack">
+            {s.meetingLink && s.status !== 'completed' && <a className="cx-btn ghost" href={s.meetingLink} target="_blank" rel="noreferrer noopener"><Icon name="video" size={14} /> Join meeting</a>}
+            {s.status === 'scheduled'
+              ? <button className="cx-btn" onClick={() => confirmStart(s, refresh, setDialog)}>Start session</button>
+              : <a className="cx-btn" href={`#/calibration/${s.id}/${s.status === 'completed' ? 'summary' : 'reveal'}`}>{s.status === 'completed' ? 'View summary' : 'Go to discussion'} <Icon name="arrow" size={14} /></a>}
           </div>
         </Card>
       </div>
@@ -187,7 +268,25 @@ function EvaluationForm({ s, reviewer, refresh, setDialog }) {
   );
 }
 
+function Meeting({ s, refresh, setDialog }) {
+  return (
+    <>
+      <div className="cx-notice info"><Icon name="users" size={16} /> This {FORMATS[s.format].name} is scored together in the meeting — there are no independent reviewer evaluations.</div>
+      <div className="cx-grid-2">
+        <Card title="Meeting">
+          {s.meetingLink ? <a className="cx-btn" href={s.meetingLink} target="_blank" rel="noreferrer noopener"><Icon name="video" size={14} /> Join meeting</a> : <p className="cx-muted">No meeting link was added.</p>}
+          <p className="cx-muted small" style={{ marginTop: 10 }}>Team Reports doesn’t host calls; use your usual meeting tool.</p>
+          {s.status === 'scheduled' && <div style={{ marginTop: 12 }}><button className="cx-btn" onClick={() => confirmStart(s, refresh, setDialog)}>Start session</button></div>}
+        </Card>
+        <Card title="Attendance"><Attendance s={s} refresh={refresh} /></Card>
+      </div>
+      {s.format === 'agent' && <Card title="Original QA evaluation"><OriginalVsFinal s={s} final={null} /></Card>}
+    </>
+  );
+}
+
 function Evaluate({ s, reviewer, refresh, setDialog }) {
+  if (!s.needsEvaluations) return <Meeting s={s} refresh={refresh} setDialog={setDialog} />;
   const current = s.reviewers.includes(reviewer) ? reviewer : s.reviewers[0];
   return (
     <>
@@ -206,7 +305,7 @@ function Evaluate({ s, reviewer, refresh, setDialog }) {
 
 function DiscussionLog({ s, refresh }) {
   const points = store.discussion(s.id);
-  const blank = { section: 'soft', parameter: '', title: '', evidence: '', agreed: '', unresolved: '', clarification: '' };
+  const blank = { section: 'soft', parameter: '', title: '', evidence: '', agreed: '', unresolved: '', clarification: '', private: false };
   const [p, setP] = useState(blank);
   const [error, setError] = useState(null);
   const done = s.status === 'completed';
@@ -218,7 +317,8 @@ function DiscussionLog({ s, refresh }) {
       <ul className="cx-points">
         {points.map((d) => (
           <li key={d.id}>
-            <div className="cx-point-meta"><span className="cx-pill">{sectionName(d.section)}</span><b>{d.parameter}</b><small>· {fmtStamp(d.at)}</small></div>
+            <div className="cx-point-meta"><span className="cx-pill">{sectionName(d.section)}</span><b>{d.parameter}</b><small>· {fmtStamp(d.at)}</small>
+              {d.private && <span className="cx-locked"><Icon name="lock" size={11} /> QA only</span>}</div>
             <h4>{d.title}</h4>
             {d.evidence && <p><span className="cx-muted">Evidence:</span> {d.evidence}</p>}
             {d.agreed && <p className="agreed"><b>Agreed:</b> {d.agreed}</p>}
@@ -236,6 +336,8 @@ function DiscussionLog({ s, refresh }) {
           <label className="wide">Agreed interpretation<textarea value={p.agreed} onChange={set('agreed')} /></label>
           <label>Unresolved disagreement<textarea value={p.unresolved} onChange={set('unresolved')} /></label>
           <label>Guideline clarification needed<textarea value={p.clarification} onChange={set('clarification')} /></label>
+          {s.format === 'agent' && <label className="cx-check-row wide"><input type="checkbox" checked={p.private} onChange={(e) => setP({ ...p, private: e.target.checked })} />
+            <span><b>QA only</b><small>Hide this point from the agent’s view (internal QA discussion).</small></span></label>}
           <div className="wide"><ErrorNote error={error} />
             <button className="cx-btn" onClick={() => { setError(null); try { store.addDiscussionPoint(s.id, p); setP({ ...blank, section: p.section }); refresh(); } catch (e) { setError(e); } }}>
               <Icon name="plus" size={14} /> Save discussion point</button></div>
@@ -247,23 +349,32 @@ function DiscussionLog({ s, refresh }) {
 
 function FinalInterpretation({ s, analysis, refresh }) {
   const saved = store.finalInterpretation(s.id);
-  const [f, setF] = useState(saved || { soft: '', tech: '', summary: '' });
+  const [f, setF] = useState(saved || { soft: '', tech: '', summary: '', coachingPoints: '', agreedExpectations: '' });
   const [error, setError] = useState(null);
   const [msg, setMsg] = useState(null);
   const done = s.status === 'completed';
   return (
     <Card title="Final agreed interpretation" sub="The calibrated outcome. Stored separately — never overwrites original verdicts." className="final">
       <div className="cx-grid-2 tight">
-        {analysis.sections.map((x) => (
+        {SECTIONS.map((sec) => {
+          const x = analysis?.sections.find((a) => a.id === sec.id) || { id: sec.id, name: sec.name };
+          return (
           <div key={x.id} className="cx-final-sec">
             <div className="cx-label">{x.name} — agreed verdict</div>
-            <small className="cx-muted">Original majority: {x.majority || 'no majority'}</small>
+            <small className="cx-muted">{analysis ? `Original majority: ${x.majority || 'no majority'}` : s.original ? `Original QA verdict: ${s.original[x.id]}` : 'Agreed together in the meeting'}</small>
             <Toggle options={VERDICTS} value={f[x.id]} disabled={done} onChange={(v) => setF({ ...f, [x.id]: v })} label={`${x.name} agreed verdict`} />
           </div>
-        ))}
+          );
+        })}
       </div>
       <label className="cx-label">Summary of agreed interpretation</label>
       <textarea className="cx-textarea" value={f.summary} disabled={done} onChange={(e) => setF({ ...f, summary: e.target.value })} placeholder="What the group agreed, and why" />
+      {s.format === 'agent' && <>
+        <label className="cx-label">Coaching points <span className="cx-muted">(shared with the agent)</span></label>
+        <textarea className="cx-textarea" value={f.coachingPoints || ''} disabled={done} onChange={(e) => setF({ ...f, coachingPoints: e.target.value })} placeholder="What the agent should do differently" />
+        <label className="cx-label">Agreed expectations</label>
+        <textarea className="cx-textarea" value={f.agreedExpectations || ''} disabled={done} onChange={(e) => setF({ ...f, agreedExpectations: e.target.value })} placeholder="The standard everyone agreed on" />
+      </>}
       {saved && <small className="cx-muted">Saved {fmtStamp(saved.savedAt)}</small>}
       <ErrorNote error={error} />
       {msg && <div className="cx-ok">{msg}</div>}
@@ -276,6 +387,24 @@ function FinalInterpretation({ s, analysis, refresh }) {
 }
 
 function Reveal({ s, refresh, setDialog }) {
+  if (!s.needsEvaluations) {
+    if (!s.startedAt) {
+      return (
+        <Card><div className="cx-hidden-box"><Icon name="users" size={28} /><h3>The meeting hasn’t started</h3>
+          <p className="cx-muted">Start the session when the group is together. The discussion log and final interpretation open then.</p>
+          <button className="cx-btn" onClick={() => confirmStart(s, refresh, setDialog)}>Start session</button></div></Card>
+      );
+    }
+    return (
+      <>
+        <div className="cx-notice reveal"><Icon name="users" size={16} /><div>Session started {fmtStamp(s.startedAt)}. Log each point the group discusses, then record the agreed interpretation.
+          {s.meetingLink && s.status !== 'completed' && <a className="cx-btn small" href={s.meetingLink} target="_blank" rel="noreferrer noopener"><Icon name="video" size={12} /> Join meeting</a>}</div></div>
+        {s.format === 'agent' && <Card title="Original QA evaluation" sub="Starting point for the discussion with the agent."><OriginalVsFinal s={s} final={null} /></Card>}
+        <DiscussionLog s={s} refresh={refresh} />
+        <FinalInterpretation s={s} analysis={null} refresh={refresh} />
+      </>
+    );
+  }
   if (!s.revealedAt) {
     const ready = s.submitted === s.required;
     return (
@@ -353,7 +482,7 @@ function Actions({ s, refresh }) {
       ) : <p className="cx-muted">No follow-up actions yet.</p>}
       <div className="cx-form actions">
         <label className="wide"><span>Action description<span className="req">*</span></span><input value={a.description} onChange={set('description')} placeholder="e.g. Coach the agent on the hold procedure" /></label>
-        <label><span>Assigned owner<span className="req">*</span></span><select value={a.owner} onChange={set('owner')}><option value="">Select owner</option>{OWNERS.map((o) => <option key={o}>{o}</option>)}</select></label>
+        <label><span>Assigned owner<span className="req">*</span></span><select value={a.owner} onChange={set('owner')}><option value="">Select owner</option>{ownersFor(s).map((o) => <option key={o}>{o}</option>)}</select></label>
         <label><span>Due date<span className="req">*</span></span><input type="date" value={a.dueDate} onChange={set('dueDate')} /></label>
         <div className="wide"><ErrorNote error={error} />
           <button className="cx-btn" onClick={() => { setError(null); try { store.addAction(s.id, a); setA({ description: '', owner: '', dueDate: '' }); refresh(); } catch (e) { setError(e); } }}><Icon name="plus" size={14} /> Add action</button></div>
@@ -364,9 +493,13 @@ function Actions({ s, refresh }) {
 }
 
 function Summary({ s, refresh, setDialog }) {
-  if (!s.revealedAt) return <Empty title="Summary is available after the reveal">Every reviewer must submit, then the facilitator reveals the evaluations.</Empty>;
-  const subs = store.revealedEvaluations(s.id);
-  const analysis = analyse(subs);
+  if (!s.discussionStarted) {
+    return s.needsEvaluations
+      ? <Empty title="Summary is available after the reveal">Every reviewer must submit, then the facilitator reveals the evaluations.</Empty>
+      : <Empty title="Summary is available once the session starts">Start the session from the Session details tab.</Empty>;
+  }
+  const subs = s.needsEvaluations ? store.revealedEvaluations(s.id) : [];
+  const analysis = s.needsEvaluations ? analyse(subs) : { sections: [] };
   const final = store.finalInterpretation(s.id);
   const points = store.discussion(s.id);
   const agree = [];
@@ -396,7 +529,8 @@ function Summary({ s, refresh, setDialog }) {
         <Card title="Session details">
           <dl className="cx-dl">
             {[['Session', s.name], ['Date & time', `${fmtDate(s.date)} · ${fmtTime(s.time)}`], ['Facilitator', s.facilitator],
-              ['Reviewers', s.reviewers.map((r) => `Reviewer ${r}`).join(', ')], ['Revealed', fmtStamp(s.revealedAt)], ['Connection ID', <span className="mono" key="c">{s.connectionId}</span>]]
+              ['Format', FORMATS[s.format].name], ['Reviewers', s.reviewers.map((r) => `Reviewer ${r}`).join(', ')], ...(s.agentName ? [['Agent', s.agentName]] : []),
+              [s.revealedAt ? 'Revealed' : 'Started', fmtStamp(s.revealedAt || s.startedAt)], ['Connection ID', <span className="mono" key="c">{s.connectionId}</span>]]
               .map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
           </dl>
         </Card>
@@ -405,6 +539,8 @@ function Summary({ s, refresh, setDialog }) {
             <>
               <div className="cx-final-row">{SECTIONS.map((x) => <div key={x.id}><span className="cx-eyebrow">{x.name}</span><Verdict value={final[x.id]} /></div>)}</div>
               {final.summary && <p>{final.summary}</p>}
+              {final.coachingPoints && <><div className="cx-eyebrow">Coaching points</div><p>{final.coachingPoints}</p></>}
+              {final.agreedExpectations && <><div className="cx-eyebrow">Agreed expectations</div><p>{final.agreedExpectations}</p></>}
             </>
           ) : <p className="cx-muted">Not recorded yet. <a className="cx-link" href={`#/calibration/${s.id}/reveal`}>Record it on Reveal &amp; discussion</a>.</p>}
           {points.some((d) => d.agreed) && (
@@ -415,6 +551,10 @@ function Summary({ s, refresh, setDialog }) {
           )}
         </Card>
       </div>
+      {s.format === 'agent' && <Card title="Original QA evaluation vs. calibration outcome"><OriginalVsFinal s={s} final={final} /></Card>}
+      {s.format !== 'blind' && <Card title="Attendance"><Attendance s={s} refresh={refresh} /></Card>}
+      {s.needsEvaluations ? (
+      <>
       <Card title="All original reviewer verdicts" sub="Locked submissions — unchanged by discussion.">
         <VerdictTable subs={subs} analysis={analysis} />
       </Card>
@@ -426,6 +566,8 @@ function Summary({ s, refresh, setDialog }) {
           {differ.length ? <ul className="cx-areas differ">{differ.map(([t, d]) => <li key={t}><b>{t}</b>{d && <small>{d}</small>}</li>)}</ul> : <p className="cx-muted">None.</p>}
         </Card>
       </div>
+      </>
+      ) : <div className="cx-notice info"><Icon name="users" size={16} /> Scored together in the meeting — there are no independent reviewer verdicts to compare.</div>}
       <Card title="Unresolved questions">
         {open.length ? (
           <ul className="cx-points">{open.map((d) => (
@@ -436,6 +578,56 @@ function Summary({ s, refresh, setDialog }) {
         ) : <p className="cx-muted">No unresolved questions.</p>}
       </Card>
       <Actions s={s} refresh={refresh} />
+    </>
+  );
+}
+
+/* ---------- agent's view (preview) ---------- */
+
+function AgentPreview({ s, refresh }) {
+  const v = store.agentView(s.id);
+  return (
+    <>
+      <div className="cx-switch">
+        <div><b><Icon name="user" size={14} /> Preview: what {v.session.agentName} sees</b><p>Prototype only — not real sign-in. Reviewer evaluations and QA-only notes are never shown here.</p></div>
+        <a className="cx-btn ghost small" href={`#/calibration/${s.id}`}>Back to facilitator view</a>
+      </div>
+      <div className="cx-grid-side">
+        <Card title="Your calibration session">
+          <dl className="cx-dl">
+            {[['Session', v.session.name], ['Call', <span className="mono" key="c">{v.session.connectionId}</span>], ['Date & time', `${fmtDate(v.session.date)} · ${fmtTime(v.session.time)}`],
+              ['Facilitator', v.session.facilitator], ['Meeting', v.session.meetingLink ? <a key="m" className="cx-link" href={v.session.meetingLink} target="_blank" rel="noreferrer noopener">Join meeting ↗</a> : 'Link not added yet']]
+              .map(([k, x]) => <div key={k}><dt>{k}</dt><dd>{x}</dd></div>)}
+          </dl>
+        </Card>
+        <Card title="Your QA evaluation and the outcome">
+          <OriginalVsFinal s={{ original: v.original }} final={v.outcome} />
+          {!v.outcome && <p className="cx-muted small">The calibration outcome appears here once the facilitator completes the session.</p>}
+        </Card>
+      </div>
+      {v.outcome && (
+        <Card title="Coaching" className="final">
+          {v.outcome.summary && <p>{v.outcome.summary}</p>}
+          <div className="cx-eyebrow" style={{ marginTop: 12 }}>Coaching points</div><p>{v.outcome.coachingPoints}</p>
+          {v.outcome.agreedExpectations && <><div className="cx-eyebrow" style={{ marginTop: 12 }}>Agreed expectations</div><p>{v.outcome.agreedExpectations}</p></>}
+        </Card>
+      )}
+      <Card title="Discussion points shared with you">
+        {v.discussion.length ? <ul className="cx-points">{v.discussion.map((d) => <li key={d.id}><div className="cx-point-meta"><span className="cx-pill">{sectionName(d.section)}</span><b>{d.parameter}</b></div><h4>{d.title}</h4>{d.agreed && <p className="agreed"><b>Agreed:</b> {d.agreed}</p>}</li>)}</ul>
+          : <p className="cx-muted">Nothing shared yet.</p>}
+      </Card>
+      <Card title="Your follow-up actions">
+        {v.actions.length ? (
+          <table className="cx-table compact">
+            <thead><tr><th>Action</th><th>Due date</th><th>Status</th></tr></thead>
+            <tbody>{v.actions.map((x) => (
+              <tr key={x.id}><td className="strong">{x.description}</td><td>{fmtDate(x.dueDate)}</td>
+                <td><select className={`cx-status-select act-${x.status}`} value={x.status} aria-label="Action status" onChange={(e) => { store.setActionStatus(x.id, e.target.value); refresh(); }}>
+                  {Object.entries(ACTION_STATUS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></td></tr>
+            ))}</tbody>
+          </table>
+        ) : <p className="cx-muted">No actions assigned to you.</p>}
+      </Card>
     </>
   );
 }
@@ -455,22 +647,29 @@ export function SessionPage({ id, tab, reviewer, refresh, setDialog }) {
       <a className="cx-back" href="#/calibration"><Icon name="back" size={14} /> All calibration sessions</a>
       <div className="cx-session-head">
         <div>
+          <div className="cx-row" style={{ marginBottom: 6 }}><FormatBadge format={s.format} />{s.format !== 'blind' && s.preReview && <span className="cx-pill">+ blind pre-review</span>}
+            {s.agentName && <span className="cx-pill">Agent: {s.agentName}</span>}</div>
           <h1>{s.name}</h1>
           <div className="cx-meta">Connection ID <span className="mono cx-chip">{s.connectionId}</span><span>{fmtDate(s.date)} · {fmtTime(s.time)}</span><span>Facilitator: <b>{s.facilitator}</b></span></div>
         </div>
-        <StatusBadge status={s.status} />
+        <div className="cx-row">
+          {s.format === 'agent' && tab !== 'agent' && <a className="cx-btn ghost small" href={`#/calibration/${id}/agent`}><Icon name="user" size={14} /> Agent’s view</a>}
+          {s.meetingLink && s.status !== 'completed' && <a className="cx-btn ghost small" href={s.meetingLink} target="_blank" rel="noreferrer noopener"><Icon name="video" size={14} /> Join meeting</a>}
+          <StatusBadge status={s.status} />
+        </div>
       </div>
       <nav className="cx-tabs">
-        {TABS.map(([key, label], i) => (
+        {tabsFor(s).map(([key, label], i) => (
           <a key={key} href={`#/calibration/${id}${key === 'details' ? '' : `/${key}`}`} className={`${tab === key ? 'on' : ''} ${tabDone(s, key) && tab !== key ? 'done' : ''}`}>
             <span className="n">{tabDone(s, key) && tab !== key ? <Icon name="check" size={12} /> : i + 1}</span>{label}
           </a>
         ))}
       </nav>
-      {tab === 'evaluate' ? <Evaluate s={s} reviewer={reviewer} refresh={refresh} setDialog={setDialog} />
+      {tab === 'agent' && s.format === 'agent' ? <AgentPreview s={s} refresh={refresh} />
+        : tab === 'evaluate' ? <Evaluate s={s} reviewer={reviewer} refresh={refresh} setDialog={setDialog} />
         : tab === 'reveal' ? <Reveal key={`${s.status}`} s={s} refresh={refresh} setDialog={setDialog} />
           : tab === 'summary' ? <Summary s={s} refresh={refresh} setDialog={setDialog} />
-            : <Details s={s} />}
+            : <Details s={s} refresh={refresh} setDialog={setDialog} />}
     </>
   );
 }

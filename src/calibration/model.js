@@ -1,10 +1,36 @@
 // CX QA Calibration: data model and rules.
 //
-// One blind calibration per customer call (Connection ID). Each reviewer
-// evaluates independently, submits and locks. The facilitator reveals only
-// once every required reviewer has submitted. Discussion points and the final
-// agreed interpretation are stored separately, so original verdicts are never
-// changed. All pages go through this file; it is the only place data changes.
+// One calibration per customer call (Connection ID), in one of three formats:
+//   Blind Session - each reviewer evaluates independently, submits and locks;
+//                   the facilitator reveals only once everyone has submitted.
+//   Team Session  - reviewers score the call together in a meeting.
+//   Agent Session - the agent joins to give context; ends with coaching.
+// Team and Agent Sessions can add the blind pre-review step before the meeting.
+// Discussion points and the final agreed interpretation are stored separately,
+// so original verdicts are never changed. All pages go through this file.
+
+import { AGENTS } from '../data.js';
+
+export const FORMATS = {
+  blind: { name: 'Blind Session', short: 'Blind', help: 'Reviewers evaluate on their own first. Nobody sees other verdicts until the facilitator reveals them.' },
+  team: { name: 'Team Session', short: 'Team', help: 'Reviewers listen and score the call together in a meeting. The facilitator records the agreed verdict.' },
+  agent: { name: 'Agent Session', short: 'Agent', help: 'The agent joins to give context. Ends with coaching points, agreed expectations and follow-up actions.' },
+};
+export const AGENT_NAMES = AGENTS.slice(0, 12).map((a) => a.name);
+export const needsEvaluations = (s) => s.format === 'blind' || !!s.preReview;
+const discussionStarted = (s) => !!(s.revealedAt || s.startedAt);
+
+// Rules shown on the create form and session details, by format.
+export function rulesFor(s) {
+  const blind = needsEvaluations(s);
+  return [
+    ['Format', FORMATS[s.format].name],
+    ['Independent evaluation', blind ? (s.format === 'blind' ? 'Always on — blind' : 'Blind pre-review before the meeting') : 'Off — reviewers score together in the meeting'],
+    ...(blind ? [['Lock original responses after submission', 'Enabled'], ['Reveal evaluations', 'Only after all required reviewers submit']] : []),
+    ...(s.format === 'agent' ? [['Agent visibility', 'Agent sees the outcome, coaching and shared notes — never reviewer evaluations or QA-only notes']] : []),
+    ['Evaluation sections', 'Soft Skills and Technical Skills'],
+  ];
+}
 
 export const SECTIONS = [
   { id: 'soft', name: 'Soft Skills', params: ['Tone', 'Active Listening', 'Empathy', 'Professionalism', 'Accountability', 'Call Control'] },
@@ -15,6 +41,7 @@ export const FINDINGS = ['Met', 'Not Met'];
 export const REVIEWERS = ['A', 'B', 'C'];
 export const FACILITATORS = ['Self', 'Priya Nair (QA Lead)', 'Marcus Hale (Team Lead)'];
 export const OWNERS = ['Self', 'Priya Nair (QA Lead)', 'Marcus Hale (Team Lead)', 'Reviewer A', 'Reviewer B', 'Reviewer C'];
+export const ownersFor = (s) => (s.agentName ? [...OWNERS, `Agent: ${s.agentName}`] : OWNERS);
 
 export const STATUS = {
   draft: 'Draft',
@@ -80,11 +107,11 @@ export function analyse(subs) {
 
 /* ---------- store ---------- */
 
-const emptyDb = () => ({ version: 2, seq: 0, sessions: {}, evaluations: {}, discussion: {}, finals: {}, actions: {} });
+const emptyDb = () => ({ version: 3, seq: 0, sessions: {}, evaluations: {}, discussion: {}, finals: {}, actions: {} });
 
 export function createStore({ storage, now = () => new Date().toISOString() }) {
   let db = storage.load();
-  if (!db || db.version !== 2) db = emptyDb();
+  if (!db || db.version !== 3) db = emptyDb(); // older sample data is replaced
   const save = () => storage.save(db);
   const nextId = (p) => `${p}-${++db.seq}`;
 
@@ -98,28 +125,41 @@ export function createStore({ storage, now = () => new Date().toISOString() }) {
     const e = evals(s.id);
     const submitted = e.filter((x) => x.status === 'submitted').length;
     const actions = Object.values(db.actions).filter((a) => a.sessionId === s.id);
-    return { ...clone(s), statusLabel: STATUS[s.status], submitted, required: s.reviewers.length, actions: clone(actions) };
+    const evaluated = needsEvaluations(s);
+    return { ...clone(s), statusLabel: STATUS[s.status], needsEvaluations: evaluated, discussionStarted: discussionStarted(s),
+      submitted: evaluated ? submitted : 0, required: evaluated ? s.reviewers.length : 0, actions: clone(actions) };
   }
 
   /* sessions */
 
   function validateSession(s) {
+    check(FORMATS[s.format], 'Choose a calibration format.');
     check(s.name, 'Session name is required.');
     check(s.connectionId, 'Connection ID is required.');
     check(/^[A-Za-z0-9-]{4,40}$/.test(s.connectionId), 'Connection ID can only contain letters, numbers and hyphens.');
     check(s.date && !Number.isNaN(Date.parse(s.date)), 'Date is required.');
     check(/^\d{2}:\d{2}$/.test(s.time || ''), 'Time is required.');
     check(s.facilitator, 'Facilitator is required.');
-    check(s.reviewers.length >= 2, 'Select at least two reviewers.');
+    check(s.reviewers.length >= (needsEvaluations(s) ? 2 : 1), needsEvaluations(s) ? 'Select at least two reviewers.' : 'Select at least one reviewer.');
+    check(!s.meetingLink || /^https:\/\/\S+$/.test(s.meetingLink), 'Meeting link must start with https://');
+    if (s.format === 'agent') {
+      check(AGENT_NAMES.includes(s.agentName), 'Choose the agent on this call.');
+      check(VERDICTS.includes(s.original.soft) && VERDICTS.includes(s.original.tech), 'Add the original QA verdicts for this call.');
+    }
   }
 
   function saveSession(input, id, { publish = false } = {}) {
-    const base = id ? session(id) : { id: nextId('ses'), status: 'draft', createdAt: now() };
+    const base = id ? session(id) : { id: nextId('ses'), status: 'draft', createdAt: now(), attendance: {} };
     check(base.status === 'draft', 'Only draft sessions can be edited.');
+    const format = FORMATS[input.format] ? input.format : 'blind';
     const s = {
       ...base,
+      format, preReview: format === 'blind' ? true : !!input.preReview,
       name: txt(input.name, 160), connectionId: txt(input.connectionId, 40).toUpperCase(), date: txt(input.date, 10), time: txt(input.time, 5),
       facilitator: txt(input.facilitator, 80), reviewers: REVIEWERS.filter((r) => (input.reviewers || []).includes(r)),
+      meetingLink: format === 'blind' ? '' : txt(input.meetingLink, 300),
+      agentName: format === 'agent' ? txt(input.agentName, 80) : '',
+      original: format === 'agent' ? { soft: input.original?.soft || '', tech: input.original?.tech || '' } : null,
     };
     if (publish) {
       validateSession(s);
@@ -173,6 +213,7 @@ export function createStore({ storage, now = () => new Date().toISOString() }) {
 
   function saveEvaluation(id, reviewer, input) {
     const s = session(id);
+    check(needsEvaluations(s), 'This session is scored together in the meeting, without independent evaluations.');
     check(s.reviewers.includes(reviewer), 'This reviewer is not assigned to the session.');
     check(['scheduled', 'in_review'].includes(s.status), 'Evaluations are closed for this session.');
     const key = evalKey(id, reviewer);
@@ -202,8 +243,35 @@ export function createStore({ storage, now = () => new Date().toISOString() }) {
 
   /* reveal, discussion, final interpretation */
 
+  // Team / Agent Sessions without pre-review go straight into the meeting.
+  function startSession(id) {
+    const s = session(id);
+    check(!needsEvaluations(s), 'This session starts with independent evaluations and a reveal.');
+    check(s.status === 'scheduled', 'Only a scheduled session can be started.');
+    s.startedAt = now();
+    s.status = 'in_discussion';
+    save();
+  }
+
+  function setAttendance(id, person, attended) {
+    const s = session(id);
+    check(s.format !== 'blind', 'Attendance is tracked for Team and Agent Sessions.');
+    check(s.status === 'in_discussion', 'Attendance can be recorded while the session is in discussion.');
+    const people = [`Facilitator: ${s.facilitator}`, ...s.reviewers.map((r) => `Reviewer ${r}`), ...(s.agentName ? [`Agent: ${s.agentName}`] : [])];
+    check(people.includes(person), 'That person is not in this session.');
+    s.attendance = { ...s.attendance, [person]: !!attended };
+    save();
+  }
+
+  function participants(id) {
+    const s = session(id);
+    return [`Facilitator: ${s.facilitator}`, ...s.reviewers.map((r) => `Reviewer ${r}`), ...(s.agentName ? [`Agent: ${s.agentName}`] : [])]
+      .map((p) => ({ name: p, attended: !!s.attendance?.[p] }));
+  }
+
   function reveal(id) {
     const s = session(id);
+    check(needsEvaluations(s), 'This session has no independent evaluations to reveal.');
     check(!revealed(id), 'Evaluations are already revealed.');
     check(allSubmitted(id), 'Evaluations can be revealed only after every required reviewer has submitted.');
     s.revealedAt = now();
@@ -223,14 +291,16 @@ export function createStore({ storage, now = () => new Date().toISOString() }) {
 
   function addDiscussionPoint(id, p) {
     const s = session(id);
-    check(revealed(id), 'Discussion opens after the reveal.');
+    check(discussionStarted(s), needsEvaluations(s) ? 'Discussion opens after the reveal.' : 'Start the session to open the discussion.');
     check(s.status !== 'completed', 'The session is completed; the discussion log is read-only.');
     check(SECTIONS.some((x) => x.id === p.section), 'Choose a section.');
     check(SECTIONS.find((x) => x.id === p.section).params.includes(p.parameter), 'Choose a QA parameter.');
     check(txt(p.title), 'Give the discussion point a title.');
     check(txt(p.agreed) || txt(p.unresolved), 'Record what was agreed or what is still unresolved.');
     const d = { id: nextId('dis'), sessionId: id, section: p.section, parameter: p.parameter, title: txt(p.title, 200), evidence: txt(p.evidence),
-      agreed: txt(p.agreed), unresolved: txt(p.unresolved), clarification: txt(p.clarification), at: now() };
+      agreed: txt(p.agreed), unresolved: txt(p.unresolved), clarification: txt(p.clarification), at: now(),
+      // QA-only points are hidden from the agent's view.
+      private: s.format === 'agent' && !!p.private };
     db.discussion[d.id] = d;
     save();
     return d.id;
@@ -240,21 +310,23 @@ export function createStore({ storage, now = () => new Date().toISOString() }) {
     return clone(db.finals[id] || null);
   }
 
-  function saveFinal(id, { soft, tech, summary }) {
+  function saveFinal(id, { soft, tech, summary, coachingPoints, agreedExpectations }) {
     const s = session(id);
-    check(revealed(id), 'The final interpretation is recorded after the reveal.');
+    check(discussionStarted(s), needsEvaluations(s) ? 'The final interpretation is recorded after the reveal.' : 'Start the session first.');
     check(s.status !== 'completed', 'The session is completed.');
     for (const v of [soft, tech]) check(!v || VERDICTS.includes(v), 'Unknown verdict.');
-    db.finals[id] = { soft: soft || '', tech: tech || '', summary: txt(summary, 4000), savedAt: now() };
+    db.finals[id] = { soft: soft || '', tech: tech || '', summary: txt(summary, 4000), savedAt: now(),
+      ...(s.format === 'agent' ? { coachingPoints: txt(coachingPoints, 4000), agreedExpectations: txt(agreedExpectations, 4000) } : {}) };
     save();
   }
 
   function complete(id) {
     const s = session(id);
-    check(s.status === 'in_discussion', 'Only a revealed session in discussion can be completed.');
+    check(s.status === 'in_discussion', 'Only a session in discussion can be completed.');
     const f = db.finals[id];
     check(f && f.soft && f.tech, 'Record the agreed Soft Skills and Technical Skills verdicts first.');
     check(f.summary, 'Add a summary of the agreed interpretation first.');
+    check(s.format !== 'agent' || f.coachingPoints, 'Add the coaching points for the agent first.');
     s.status = 'completed';
     s.completedAt = now();
     save();
@@ -263,8 +335,8 @@ export function createStore({ storage, now = () => new Date().toISOString() }) {
   /* follow-up actions (editable even after completion) */
 
   function addAction(id, { description, owner, dueDate }) {
-    session(id);
-    check(revealed(id), 'Follow-up actions are added after the reveal.');
+    const s = session(id);
+    check(discussionStarted(s), 'Follow-up actions are added once the discussion has started.');
     check(txt(description), 'Action description is required.');
     check(txt(owner), 'Assigned owner is required.');
     check(dueDate && !Number.isNaN(Date.parse(dueDate)), 'Due date is required.');
@@ -281,6 +353,24 @@ export function createStore({ storage, now = () => new Date().toISOString() }) {
     save();
   }
 
+  // What the agent may see: their call, the original QA verdict, the outcome once
+  // completed, non-private discussion points and their own actions. Never
+  // reviewer evaluations or QA-only notes.
+  function agentView(id) {
+    const s = session(id);
+    check(s.format === 'agent', 'Only Agent Sessions have an agent view.');
+    const f = db.finals[id];
+    const me = `Agent: ${s.agentName}`;
+    return {
+      session: { id: s.id, name: s.name, connectionId: s.connectionId, date: s.date, time: s.time, facilitator: s.facilitator, meetingLink: s.meetingLink,
+        status: s.status, agentName: s.agentName, reviewers: s.reviewers },
+      original: clone(s.original),
+      outcome: s.status === 'completed' && f ? { soft: f.soft, tech: f.tech, summary: f.summary, coachingPoints: f.coachingPoints, agreedExpectations: f.agreedExpectations } : null,
+      discussion: discussion(id).filter((d) => !d.private).map(({ id: did, section, parameter, title, agreed, at }) => ({ id: did, section, parameter, title, agreed, at })),
+      actions: Object.values(db.actions).filter((a) => a.sessionId === id && a.owner === me).map(clone),
+    };
+  }
+
   function allActions() {
     return Object.values(db.actions).map((a) => ({ ...clone(a), session: clone(db.sessions[a.sessionId]) }))
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
@@ -290,7 +380,8 @@ export function createStore({ storage, now = () => new Date().toISOString() }) {
 
   function report() {
     const sessions = list().filter((s) => s.status !== 'draft');
-    const counted = sessions.filter((s) => ['in_review', 'ready_to_reveal', 'in_discussion', 'completed'].includes(s.status));
+    const counted = sessions.filter((s) => s.needsEvaluations && ['in_review', 'ready_to_reveal', 'in_discussion', 'completed'].includes(s.status));
+    const live = sessions.filter((s) => !s.needsEvaluations && ['in_discussion', 'completed'].includes(s.status));
     const required = counted.reduce((a, s) => a + s.required, 0);
     const submitted = counted.reduce((a, s) => a + s.submitted, 0);
     const full = counted.filter((s) => s.submitted === s.required);
@@ -334,7 +425,8 @@ export function createStore({ storage, now = () => new Date().toISOString() }) {
       sections: SECTIONS.map((s) => ({ ...s, ...sec[s.id], pct: sec[s.id].total ? Math.round((sec[s.id].agreed / sec[s.id].total) * 100) : null })),
       params: { compared: paramCompared, agreed: paramAgreed, pct: paramCompared ? Math.round((paramAgreed / paramCompared) * 100) : null },
       disagreements: Object.values(byParam).filter((p) => p.disagreed).sort((a, b) => b.disagreed - a.disagreed || b.compared - a.compared),
-      rows: rows.sort((a, b) => `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`)),
+      byFormat: Object.keys(FORMATS).map((f) => ({ format: f, total: sessions.filter((s) => s.format === f).length, completed: sessions.filter((s) => s.format === f && s.status === 'completed').length })),
+      rows: [...rows, ...live.map((s) => ({ ...s, sectionResult: null, paramPct: null }))].sort((a, b) => `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`)),
       openActions: actions.filter((a) => a.status !== 'completed'),
     };
   }
@@ -346,8 +438,9 @@ export function createStore({ storage, now = () => new Date().toISOString() }) {
   }
 
   const api = {
-    list, get, saveSession, progress, myEvaluation, saveEvaluation, submitEvaluation, reveal, revealedEvaluations, discussion,
-    addDiscussionPoint, finalInterpretation, saveFinal, complete, addAction, setActionStatus, allActions, report, reset,
+    list, get, saveSession, progress, myEvaluation, saveEvaluation, submitEvaluation, startSession, setAttendance, participants, reveal,
+    revealedEvaluations, discussion, addDiscussionPoint, finalInterpretation, saveFinal, complete, addAction, setActionStatus, agentView,
+    allActions, report, reset,
     isEmpty: () => !Object.keys(db.sessions).length,
   };
   return api;

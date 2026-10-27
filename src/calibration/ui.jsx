@@ -1,7 +1,7 @@
 // Shared UI pieces for the CX QA Calibration pages.
 
 import { useState } from 'react';
-import { STATUS, ACTION_STATUS } from './model.js';
+import { STATUS, ACTION_STATUS, FORMATS } from './model.js';
 
 const ICONS = {
   logo: 'M9 3h6v3H9zM6 5h3M15 5h3v16H6V5h3M9 13l2 2 4-4',
@@ -24,6 +24,9 @@ const ICONS = {
   reset: 'M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4',
   trash: 'M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13',
   external: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
+  video: 'M3 7h12v10H3zM15 10l6-3v10l-6-3',
+  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
+  users: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M16 3.5a4 4 0 0 1 0 7.5M22 21a7 7 0 0 0-4-6.3',
 };
 
 export function Icon({ name, size = 16 }) {
@@ -36,6 +39,10 @@ export function Icon({ name, size = 16 }) {
 
 export function StatusBadge({ status }) {
   return <span className={`cx-badge st-${status}`}>{STATUS[status]}</span>;
+}
+
+export function FormatBadge({ format }) {
+  return <span className={`cx-badge fmt-${format}`}>{FORMATS[format]?.name}</span>;
 }
 
 export function ActionBadge({ status }) {

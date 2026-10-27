@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { store, resetDemo } from './store.js';
-import { ACTIVE, REVIEWERS, FACILITATORS, SECTIONS } from './model.js';
-import { Icon, StatusBadge, ActionBadge, PageHead, Card, Stat, ErrorNote, Empty, Confirm, fmtDate, fmtTime } from './ui.jsx';
+import { ACTIVE, REVIEWERS, FACILITATORS, SECTIONS, FORMATS, AGENT_NAMES, VERDICTS, rulesFor } from './model.js';
+import { Icon, StatusBadge, FormatBadge, ActionBadge, Toggle, PageHead, Card, Stat, ErrorNote, Empty, Confirm, fmtDate, fmtTime } from './ui.jsx';
 import { SessionPage } from './SessionPage.jsx';
 
 /* ---------- hash router: #/calibration/ses-1/evaluate ---------- */
@@ -36,15 +36,16 @@ function SessionTable({ sessions }) {
   return (
     <div className="cx-table-wrap">
       <table className="cx-table">
-        <thead><tr><th>Session name</th><th>Connection ID</th><th>Date &amp; time</th><th>Facilitator</th><th>Reviewers</th><th>Status</th><th>Action</th></tr></thead>
+        <thead><tr><th>Session name</th><th>Format</th><th>Connection ID</th><th>Date &amp; time</th><th>Facilitator</th><th>Reviewers</th><th>Status</th><th>Action</th></tr></thead>
         <tbody>
           {sessions.map((s) => (
             <tr key={s.id}>
-              <td className="strong">{s.name || 'Untitled draft'}</td>
+              <td className="strong">{s.name || 'Untitled draft'}{s.agentName && <small>Agent: {s.agentName}</small>}</td>
+              <td><FormatBadge format={s.format} />{s.format !== 'blind' && s.preReview && <small>+ blind pre-review</small>}</td>
               <td className="mono">{s.connectionId || '—'}</td>
               <td>{fmtDate(s.date)}<small>{fmtTime(s.time)}</small></td>
               <td>{s.facilitator || '—'}</td>
-              <td>{s.reviewers.join(', ') || '—'}<small>{s.submitted}/{s.required} submitted</small></td>
+              <td>{s.reviewers.join(', ') || '—'}<small>{s.needsEvaluations ? `${s.submitted}/${s.required} submitted` : 'Scored together'}</small></td>
               <td><StatusBadge status={s.status} /></td>
               <td><a className="cx-link" href={s.status === 'draft' ? `#/calibration/${s.id}/edit` : `#/calibration/${s.id}`}>{s.status === 'draft' ? 'Continue draft' : 'View session'}</a></td>
             </tr>
@@ -111,15 +112,22 @@ function Dashboard() {
 
 function Sessions() {
   const [filter, setFilter] = useState('all');
+  const [format, setFormat] = useState('');
   const all = store.list();
-  const rows = all.filter((s) => filter === 'all' || (filter === 'active' ? s.status !== 'completed' : s.status === 'completed'));
+  const rows = all.filter((s) => filter === 'all' || (filter === 'active' ? s.status !== 'completed' : s.status === 'completed'))
+    .filter((s) => !format || s.format === format);
   return (
     <>
-      <PageHead eyebrow="QA Calibration" title="Calibration sessions" sub="Open a session to run the reviewer blind evaluation, facilitator reveal, discussion and summary.">
+      <PageHead eyebrow="QA Calibration" title="Calibration sessions" sub="Blind, Team and Agent Sessions. Open a session to run the evaluation or meeting, discussion and summary.">
         <a className="cx-btn" href="#/calibration/new"><Icon name="plus" /> Create Calibration Session</a>
       </PageHead>
       <Card title={`${rows.length} session${rows.length === 1 ? '' : 's'}`} right={
-        <div className="cx-seg">{[['all', 'All'], ['active', 'Active'], ['completed', 'Completed']].map(([k, l]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{l}</button>)}</div>
+        <div className="cx-row">
+          <select className="cx-select" value={format} onChange={(e) => setFormat(e.target.value)} aria-label="Filter by format">
+            <option value="">All formats</option>{Object.entries(FORMATS).map(([k, f]) => <option key={k} value={k}>{f.name}</option>)}
+          </select>
+          <div className="cx-seg">{[['all', 'All'], ['active', 'Active'], ['completed', 'Completed']].map(([k, l]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{l}</button>)}</div>
+        </div>
       }>
         <SessionTable sessions={rows} />
       </Card>
@@ -129,16 +137,25 @@ function Sessions() {
 
 /* ---------- create / edit draft ---------- */
 
-const RULES = [
-  ['Blind evaluation', 'Enabled'],
-  ['Lock original responses after submission', 'Enabled'],
-  ['Reveal evaluations', 'Only after all required reviewers submit'],
-  ['Evaluation sections', 'Soft Skills and Technical Skills'],
-];
+const NEXT = {
+  blind: ['Each selected reviewer opens the evaluation form and reviews the call independently.',
+    'Reviewers submit and lock their original verdicts — they can’t be edited afterwards.',
+    'The facilitator can reveal evaluations only once every required reviewer has submitted.',
+    'Discussion outcomes are captured separately, so original verdicts are always preserved.'],
+  team: ['Participants join the meeting and listen to the call together.',
+    'The facilitator guides the group through the scorecard and logs each discussed point.',
+    'The facilitator records the agreed verdict, rationale and any guideline clarifications.',
+    'The session is completed and follow-up actions are tracked.'],
+  agent: ['The agent and reviewers join the meeting; the original QA verdict is the starting point.',
+    'The facilitator invites the agent to give context and logs each point (QA-only notes stay hidden from the agent).',
+    'The group agrees the outcome, coaching points and expectations.',
+    'The agent sees the outcome, coaching and their own follow-up actions.'],
+};
 
 function CreateSession({ editId, refresh }) {
   const existing = editId ? store.list().find((s) => s.id === editId) : null;
-  const [f, setF] = useState(existing || { name: '', connectionId: '', date: '', time: '', facilitator: 'Self', reviewers: ['A', 'B', 'C'] });
+  const [f, setF] = useState(existing || { format: 'blind', preReview: false, name: '', connectionId: '', date: '', time: '', facilitator: 'Self', reviewers: ['A', 'B', 'C'],
+    meetingLink: '', agentName: '', original: { soft: '', tech: '' } });
   const [error, setError] = useState(null);
   if (editId && (!existing || existing.status !== 'draft')) return <Empty title="This draft can no longer be edited">It may have been published already. <a className="cx-link" href="#/calibration">Back to sessions</a></Empty>;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -153,9 +170,24 @@ function CreateSession({ editId, refresh }) {
   return (
     <>
       <a className="cx-back" href="#/calibration"><Icon name="back" size={14} /> All calibration sessions</a>
-      <PageHead title={editId ? 'Continue draft session' : 'Create calibration session'} sub="Set up a blind calibration for one customer call. Reviewers evaluate independently before anything is revealed." />
+      <PageHead title={editId ? 'Continue draft session' : 'Create calibration session'} sub="Set up a calibration for one customer call. Pick the format that fits what you want to align on." />
       <div className="cx-grid-side">
         <div>
+          <Card title="Calibration format">
+            <div className="cx-formats" role="radiogroup" aria-label="Calibration format">
+              {Object.entries(FORMATS).map(([k, x]) => (
+                <button key={k} type="button" role="radio" aria-checked={f.format === k} className={`cx-format ${f.format === k ? 'on' : ''}`}
+                  onClick={() => setF({ ...f, format: k })}>
+                  <span className={`cx-format-icon fmt-${k}`}><Icon name={k === 'blind' ? 'eyeOff' : k === 'team' ? 'users' : 'user'} size={18} /></span>
+                  <b>{x.name}</b><span>{x.help}</span>
+                </button>
+              ))}
+            </div>
+            {f.format !== 'blind' && (
+              <label className="cx-check-row"><input type="checkbox" checked={!!f.preReview} onChange={(e) => setF({ ...f, preReview: e.target.checked })} />
+                <span><b>Add a blind pre-review</b><small>Reviewers evaluate independently and the facilitator reveals before the meeting starts.</small></span></label>
+            )}
+          </Card>
           <Card title="Session details">
             <div className="cx-form">
               <label className="wide"><span>Session name<span className="req">*</span></span><input value={f.name} onChange={set('name')} placeholder="e.g. CX QA Calibration – Billing Dispute" /></label>
@@ -165,6 +197,18 @@ function CreateSession({ editId, refresh }) {
               <label><span>Time<span className="req">*</span></span><input type="time" value={f.time} onChange={set('time')} /></label>
               <label className="wide"><span>Facilitator<span className="req">*</span></span>
                 <select value={f.facilitator} onChange={set('facilitator')}>{FACILITATORS.map((x) => <option key={x}>{x}</option>)}</select></label>
+              {f.format !== 'blind' && (
+                <label className="wide">Meeting link<input value={f.meetingLink} onChange={set('meetingLink')} placeholder="https://meet.google.com/…" />
+                  <small>Team Reports doesn’t host calls — paste the Google Meet (or other) link.</small></label>
+              )}
+              {f.format === 'agent' && <>
+                <label className="wide"><span>Agent on this call<span className="req">*</span></span>
+                  <select value={f.agentName} onChange={set('agentName')}><option value="">Select agent</option>{AGENT_NAMES.map((x) => <option key={x}>{x}</option>)}</select></label>
+                {SECTIONS.map((x) => (
+                  <div key={x.id} className="cx-field"><span className="cx-field-label">Original QA verdict — {x.name}<span className="req">*</span></span>
+                    <Toggle options={VERDICTS} value={f.original?.[x.id]} onChange={(v) => setF({ ...f, original: { ...f.original, [x.id]: v } })} className="small" label={`Original ${x.name} verdict`} /></div>
+                ))}
+              </>}
               <fieldset className="wide"><legend><span>Reviewers<span className="req">*</span></span></legend>
                 <div className="cx-checks">{REVIEWERS.map((r) => (
                   <label key={r} className={`cx-check ${f.reviewers.includes(r) ? 'on' : ''}`}>
@@ -174,8 +218,8 @@ function CreateSession({ editId, refresh }) {
               </fieldset>
             </div>
           </Card>
-          <Card title="Calibration rules" sub="These rules protect independent judgement and are fixed for every session.">
-            <dl className="cx-dl">{RULES.map(([k, v]) => <div key={k}><dt>{k}</dt><dd><span className="cx-pill">{v}</span></dd></div>)}</dl>
+          <Card title="Calibration rules" sub="These rules are set by the format you choose.">
+            <dl className="cx-dl">{rulesFor(f).map(([k, v]) => <div key={k}><dt>{k}</dt><dd><span className="cx-pill">{v}</span></dd></div>)}</dl>
           </Card>
           <ErrorNote error={error} />
           <div className="cx-actions-row">
@@ -185,10 +229,7 @@ function CreateSession({ editId, refresh }) {
         </div>
         <Card title="What happens next">
           <ol className="cx-steps-list">
-            {['Each selected reviewer opens the evaluation form and reviews the call independently.',
-              'Reviewers submit and lock their original verdicts — they can’t be edited afterwards.',
-              'The facilitator can reveal evaluations only once every required reviewer has submitted.',
-              'Discussion outcomes are captured separately, so original verdicts are always preserved.'].map((t, i) => <li key={t}><span>{i + 1}</span><p>{t}</p></li>)}
+            {(f.format !== 'blind' && f.preReview ? [NEXT.blind[0], NEXT.blind[1], 'The facilitator reveals once everyone has submitted, then runs the meeting.', ...NEXT[f.format].slice(2)] : NEXT[f.format]).map((t, i) => <li key={t}><span>{i + 1}</span><p>{t}</p></li>)}
           </ol>
           <p className="cx-muted small">Prototype: sessions are stored in your browser only.</p>
         </Card>
@@ -234,16 +275,24 @@ function Reports() {
           ) : <p className="cx-muted">No parameter disagreements yet.</p>}
         </Card>
       </div>
+      <Card title="Sessions by format">
+        <div className="cx-format-stats">
+          {r.byFormat.map((x) => <div key={x.format}><FormatBadge format={x.format} /><b>{x.total}</b><small>{x.completed} completed</small></div>)}
+        </div>
+        <p className="cx-muted small">Agreement figures come only from sessions with independent evaluations (Blind Sessions, and Team / Agent Sessions with a blind pre-review).</p>
+      </Card>
       <Card title="Recent calibration sessions" sub="Initial agreement per session, from original submissions.">
         {r.rows.length ? (
           <div className="cx-table-wrap">
             <table className="cx-table">
-              <thead><tr><th>Session</th><th>Connection ID</th><th>Date</th><th>Status</th><th>Submissions</th><th>Soft Skills</th><th>Technical Skills</th><th>Parameters</th><th>Action</th></tr></thead>
+              <thead><tr><th>Session</th><th>Format</th><th>Connection ID</th><th>Date</th><th>Status</th><th>Submissions</th><th>Soft Skills</th><th>Technical Skills</th><th>Parameters</th><th>Action</th></tr></thead>
               <tbody>{r.rows.map((s) => (
                 <tr key={s.id}>
-                  <td className="strong">{s.name}</td><td className="mono">{s.connectionId}</td><td>{fmtDate(s.date)}</td><td><StatusBadge status={s.status} /></td>
-                  <td>{s.submitted}/{s.required}</td>
-                  {SECTIONS.map((x) => <td key={x.id}><span className={`cx-agree ${s.sectionResult[x.id].toLowerCase()}`}>{s.sectionResult[x.id]}</span></td>)}
+                  <td className="strong">{s.name}</td><td><FormatBadge format={s.format} /></td><td className="mono">{s.connectionId}</td><td>{fmtDate(s.date)}</td><td><StatusBadge status={s.status} /></td>
+                  <td>{s.sectionResult ? `${s.submitted}/${s.required}` : '—'}</td>
+                  {s.sectionResult
+                    ? SECTIONS.map((x) => <td key={x.id}><span className={`cx-agree ${s.sectionResult[x.id].toLowerCase()}`}>{s.sectionResult[x.id]}</span></td>)
+                    : <td colSpan={2}><span className="cx-agree incomplete">Scored together — no independent verdicts</span></td>}
                   <td>{s.paramPct === null ? '—' : `${s.paramPct}%`}</td>
                   <td><a className="cx-link" href={`#/calibration/${s.id}`}>View</a></td>
                 </tr>

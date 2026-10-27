@@ -134,17 +134,96 @@ describe('agreement metrics', () => {
     const store = createStore({ storage: memoryStorage(), now: () => clock || '2026-10-27T12:00:00Z' });
     seedDemo(store, (t) => { clock = t; });
     const r = store.report();
-    assert.equal(r.total, 7);
-    assert.equal(r.completed, 3);
+    assert.equal(r.total, 10);
+    assert.deepEqual(r.byFormat.map((f) => f.total), [6, 2, 2]);
+    assert.equal(r.completed, 5);
     assert.equal(r.agreement.excluded, 1, 'Plan Upgrade has 1 of 3 submissions');
     assert.deepEqual([r.submission.submitted, r.submission.required], [13, 15]);
     assert.deepEqual([r.agreement.unanimous, r.agreement.total], [4, 8]);
     assert.equal(r.rows.find((x) => x.connectionId === 'CONN-72950-1028').sectionResult.soft, 'Incomplete');
     assert.ok(r.disagreements.length > 0);
-    assert.equal(r.openActions.length, 2);
+    assert.equal(r.openActions.length, 4);
+    assert.equal(r.rows.find((x) => x.format === 'team' && x.status === 'completed').sectionResult, null, 'live sessions have no independent verdicts');
   });
 
   test('empty evaluation has both sections', () => {
     assert.deepEqual(Object.keys(emptyEvaluation().sections), ['soft', 'tech']);
+  });
+});
+
+describe('team session', () => {
+  const TEAM = { ...SESSION, format: 'team', reviewers: ['A', 'B'], meetingLink: 'https://meet.google.com/abc' };
+
+  test('scored together: no evaluations, facilitator starts the session', () => {
+    const { store, id } = setup(TEAM);
+    rejects(() => store.submitEvaluation(id, 'A', ev('Good Job', 'Good Job')), /scored together/);
+    rejects(() => store.reveal(id), /no independent evaluations/);
+    rejects(() => store.addDiscussionPoint(id, { section: 'soft', parameter: 'Tone', title: 'x', agreed: 'y' }), /Start the session/);
+    store.startSession(id);
+    assert.equal(store.get(id).status, 'in_discussion');
+    store.setAttendance(id, 'Reviewer A', true);
+    rejects(() => store.setAttendance(id, 'Reviewer C', true), /not in this session/);
+    assert.equal(store.participants(id).find((p) => p.name === 'Reviewer A').attended, true);
+    store.addDiscussionPoint(id, { section: 'soft', parameter: 'Tone', title: 'Tone', agreed: 'Met' });
+    store.saveFinal(id, { soft: 'Good Job', tech: 'Good Job', summary: 'Agreed together.' });
+    store.addAction(id, { description: 'Update guide', owner: 'Self', dueDate: '2026-11-10' });
+    store.complete(id);
+    assert.equal(store.get(id).status, 'completed');
+  });
+
+  test('optional blind pre-review makes it run like a blind session first', () => {
+    const { store, id } = setup({ ...TEAM, preReview: true });
+    rejects(() => store.startSession(id), /independent evaluations/);
+    store.submitEvaluation(id, 'A', ev('Good Job', 'Good Job'));
+    rejects(() => store.reveal(id), /every required reviewer/);
+    store.submitEvaluation(id, 'B', ev('Not Yet', 'Good Job'));
+    store.reveal(id);
+    assert.equal(store.get(id).status, 'in_discussion');
+  });
+
+  test('meeting link must be https', () => {
+    const { store } = setup();
+    rejects(() => store.saveSession({ ...TEAM, meetingLink: 'meet.google.com/x' }, null, { publish: true }), /https/);
+  });
+});
+
+describe('agent session', () => {
+  const AGENT = { ...SESSION, format: 'agent', reviewers: ['A', 'B'], agentName: 'Avery Adams', original: { soft: 'Good Job', tech: 'Not Yet' } };
+
+  test('needs the agent and the original QA verdicts', () => {
+    const { store } = setup();
+    rejects(() => store.saveSession({ ...AGENT, agentName: '' }, null, { publish: true }), /agent on this call/);
+    rejects(() => store.saveSession({ ...AGENT, original: {} }, null, { publish: true }), /original QA verdicts/);
+  });
+
+  test('agent view hides QA-only notes and shows the outcome only once completed', () => {
+    const { store, id } = setup(AGENT);
+    store.startSession(id);
+    store.addDiscussionPoint(id, { section: 'tech', parameter: 'Follow-up', title: 'Shared point', agreed: 'Needs a time frame' });
+    store.addDiscussionPoint(id, { section: 'tech', parameter: 'Documentation', title: 'SECRET internal point', agreed: 'x', private: true });
+    store.saveFinal(id, { soft: 'Good Job', tech: 'Not Yet', summary: 'ok', coachingPoints: '', agreedExpectations: '' });
+    rejects(() => store.complete(id), /coaching points/);
+    store.saveFinal(id, { soft: 'Good Job', tech: 'Not Yet', summary: 'ok', coachingPoints: 'Give a time frame', agreedExpectations: 'Always' });
+    store.addAction(id, { description: 'Agent task', owner: 'Agent: Avery Adams', dueDate: '2026-11-10' });
+    store.addAction(id, { description: 'QA task', owner: 'Reviewer A', dueDate: '2026-11-10' });
+    let v = store.agentView(id);
+    assert.equal(v.outcome, null, 'no outcome before completion');
+    store.complete(id);
+    v = store.agentView(id);
+    assert.equal(JSON.stringify(v).includes('SECRET'), false);
+    assert.equal(v.discussion.length, 1);
+    assert.deepEqual(v.actions.map((a) => a.description), ['Agent task']);
+    assert.equal(v.outcome.coachingPoints, 'Give a time frame');
+    assert.deepEqual(v.original, { soft: 'Good Job', tech: 'Not Yet' });
+    assert.equal(store.discussion(id).length, 2, 'QA still sees both points');
+  });
+
+  test('private notes only exist in agent sessions; blind sessions have no agent view', () => {
+    const { store, id } = setup();
+    for (const r of ['A', 'B', 'C']) store.submitEvaluation(id, r, ev('Good Job', 'Good Job'));
+    store.reveal(id);
+    store.addDiscussionPoint(id, { section: 'soft', parameter: 'Tone', title: 't', agreed: 'a', private: true });
+    assert.equal(store.discussion(id)[0].private, false);
+    rejects(() => store.agentView(id), /Only Agent Sessions/);
   });
 });

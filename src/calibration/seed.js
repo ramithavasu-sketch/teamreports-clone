@@ -72,8 +72,46 @@ export function seedDemo(store, at) {
   const s5 = make('2026-10-23T09:00:00Z', { name: 'CX QA Calibration – Plan Upgrade', connectionId: 'CONN-72950-1028', date: '2026-10-28', time: '15:00' });
   submit('2026-10-26T11:00:00Z', s5, 'B', ev('Good Job', [obs('Professionalism', '00:04', 'Met', 'Clear greeting.')], 'Good Job', [obs('Query Resolution', '04:20', 'Met', 'Upgrade applied correctly.')]));
 
+  /* Team Session, completed (scored together, no pre-review) */
+  const t1 = make('2026-10-12T09:00:00Z', { format: 'team', name: 'Team Session – Hold Etiquette Standards', connectionId: 'CONN-63380-1015', date: '2026-10-15', time: '16:00',
+    facilitator: 'Priya Nair (QA Lead)', meetingLink: 'https://meet.google.com/' });
+  at('2026-10-15T10:30:00Z'); store.startSession(t1);
+  for (const p of ['Facilitator: Priya Nair (QA Lead)', 'Reviewer A', 'Reviewer B', 'Reviewer C']) store.setAttendance(t1, p, true);
+  at('2026-10-15T10:45:00Z');
+  store.addDiscussionPoint(t1, { section: 'tech', parameter: 'Hold Procedure', title: 'Second hold at 03:40 without a time frame', evidence: '“Just hold on a moment.”',
+    agreed: 'Every hold needs permission and a time frame, including repeat holds. Not Met.', clarification: 'Say explicitly in the guideline that repeat holds follow the same rule.' });
+  at('2026-10-15T10:55:00Z');
+  store.addDiscussionPoint(t1, { section: 'soft', parameter: 'Tone', title: 'Tone after the second hold', agreed: 'Tone stayed warm; the hold miss is technical only. Met.' });
+  store.saveFinal(t1, { soft: 'Good Job', tech: 'Not Yet', summary: 'Team agreed: repeat holds must follow the full hold procedure. Technical Skills Not Yet.' });
+  store.addAction(t1, { description: 'Add the repeat-hold rule to the Hold Procedure guideline', owner: 'Priya Nair (QA Lead)', dueDate: '2026-10-25' });
+  at('2026-10-15T11:10:00Z'); store.complete(t1);
+  store.setActionStatus(store.allActions().find((a) => a.sessionId === t1).id, 'completed');
+
+  /* Agent Session, completed with coaching */
+  const g1 = make('2026-10-17T09:00:00Z', { format: 'agent', name: 'Agent Session – Avery Adams, Refund Follow-up', connectionId: 'CONN-66721-1020', date: '2026-10-20', time: '12:00',
+    reviewers: ['A', 'B'], agentName: 'Avery Adams', original: { soft: 'Good Job', tech: 'Not Yet' }, meetingLink: 'https://meet.google.com/' });
+  at('2026-10-20T06:30:00Z'); store.startSession(g1);
+  for (const p of ['Facilitator: Self', 'Reviewer A', 'Reviewer B', 'Agent: Avery Adams']) store.setAttendance(g1, p, true);
+  at('2026-10-20T06:40:00Z');
+  store.addDiscussionPoint(g1, { section: 'tech', parameter: 'Follow-up', title: 'Follow-up promise at 05:10', evidence: '“I will get back to you about the refund.”',
+    agreed: 'Avery explained the refund tool was down. Agreed the commitment still needs a time frame. Not Met stands.' });
+  at('2026-10-20T06:50:00Z');
+  store.addDiscussionPoint(g1, { section: 'tech', parameter: 'Documentation', title: 'Tool outage not noted', private: true,
+    agreed: 'Original evaluator did not know about the outage; check whether outage notes are being missed team-wide.' });
+  store.saveFinal(g1, { soft: 'Good Job', tech: 'Not Yet', summary: 'Original verdicts confirmed. Context on the tool outage noted; follow-up still needed a time frame.',
+    coachingPoints: 'When a tool is down, give the customer a specific time you will follow up, and note the outage in the ticket.',
+    agreedExpectations: 'Every follow-up promise includes a time frame. Tool outages are written in the notes.' });
+  store.addAction(g1, { description: 'Use a time frame on every follow-up promise for the next 2 weeks', owner: 'Agent: Avery Adams', dueDate: '2026-11-03' });
+  store.addAction(g1, { description: 'Check five more tickets for missing outage notes', owner: 'Reviewer A', dueDate: '2026-10-30' });
+  at('2026-10-20T07:05:00Z'); store.complete(g1);
+
+  /* Agent Session, in discussion today */
+  const g2 = make('2026-10-24T09:00:00Z', { format: 'agent', name: 'Agent Session – Jordan Brooks, Account Access', connectionId: 'CONN-69145-1027', date: '2026-10-27', time: '14:30',
+    reviewers: ['B', 'C'], agentName: 'Jordan Brooks', original: { soft: 'Not Yet', tech: 'Good Job' } });
+  at('2026-10-27T09:00:00Z'); store.startSession(g2);
+
   /* 6–7. Scheduled */
   make('2026-10-24T09:00:00Z', { name: 'CX QA Calibration – Delivery Delay Complaint', connectionId: 'CONN-75521-1103', date: '2026-11-03', time: '11:30', facilitator: 'Priya Nair (QA Lead)' });
-  make('2026-10-25T09:00:00Z', { name: 'CX QA Calibration – Account Closure Retention', connectionId: 'CONN-78004-1110', date: '2026-11-10', time: '15:00' });
+  make('2026-10-25T09:00:00Z', { format: 'team', preReview: true, meetingLink: 'https://meet.google.com/', name: 'Team Session – Account Closure Retention', connectionId: 'CONN-78004-1110', date: '2026-11-10', time: '15:00' });
   at(null);
 }
