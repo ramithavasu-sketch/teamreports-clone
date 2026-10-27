@@ -8,8 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test tests/*.test.js",
-    "test:db": "./scripts/test-db.sh"
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "react": "^19.1.0",

@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
 import { WEEKS, AGENTS, LEADS, AUDIT, DASHBOARD, ATTENDANCE, BOX_COLUMNS, BOX_SCORES } from './data';
-import { Calibration, calibrationNav } from './calibration/Calibration.jsx';
-import { getPerson } from './calibration/people.js';
 
 const ICON_PATHS = {
   dashboard: 'M4 11 12 4l8 7v9h-5v-6H9v6H4z',
@@ -59,30 +57,20 @@ function WeekPicker({ week, setWeek }) {
   );
 }
 
-function Sidebar({ page, setPage, open, setOpen, viewer }) {
-  const me = getPerson(viewer);
+function Sidebar({ page, setPage, open, setOpen }) {
   return (
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       <button className="nav-btn" onClick={() => setOpen(!open)} title="Menu">
         <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h12M4 17h8" /></svg>
       </button>
       <nav>
-        {NAV.map(([key, label]) => key === 'cal' ? (
-          <div key={key} className="nav-group">
-            <button className={`nav-btn ${page.startsWith('cal') ? 'active' : ''}`} title={label} onClick={() => setPage('cal:assigned')}>
-              <Icon name={key} />{open && <span>{label}</span>}
-            </button>
-            {open && calibrationNav(viewer).map((n) => (
-              <button key={n.key} className={`nav-btn nav-sub ${page === n.key ? 'active' : ''}`} onClick={() => setPage(n.key)}>{n.label}</button>
-            ))}
-          </div>
-        ) : (
+        {NAV.map(([key, label]) => (
           <button key={key} className={`nav-btn ${page === key ? 'active' : ''}`} title={label} onClick={() => setPage(key)}>
             <Icon name={key} />{open && <span>{label}</span>}
           </button>
         ))}
       </nav>
-      <div className="me"><Avatar name={me.name} hue={me.hue} size={30} />{open && <span>{me.name}</span>}</div>
+      <div className="me"><Avatar name="Ramitha Vasu" hue={20} size={30} />{open && <span>Ramitha Vasu</span>}</div>
     </aside>
   );
 }
@@ -422,33 +410,32 @@ function CallGuard() {
   );
 }
 
-const PAGES = { dashboard: Dashboard, callguard: CallGuard, evals: MyEvals, scrub: CallScrubbing, audit: TeamAudit, setup: SetupWeek, perf: Performance, form: AttendanceForm, report: AttendanceReport, box: BoxScore, tiers: TiersCalculator };
+// Call Calibration lives on its own page (/call-calibration/) so it can be linked
+// from anywhere; Team Reports shows it in a frame.
+function CallCalibration() {
+  return (
+    <div className="callguard-frame">
+      <iframe title="CX QA Calibration" src={`${import.meta.env.BASE_URL}call-calibration/?embed=1`} />
+    </div>
+  );
+}
+
+const PAGES = { dashboard: Dashboard, callguard: CallGuard, cal: CallCalibration, evals: MyEvals, scrub: CallScrubbing, audit: TeamAudit, setup: SetupWeek, perf: Performance, form: AttendanceForm, report: AttendanceReport, box: BoxScore, tiers: TiersCalculator };
 
 const pageFromHash = () => {
   const h = decodeURIComponent(window.location.hash.slice(1));
-  return (PAGES[h] || h.startsWith('cal:')) ? h : 'dashboard';
+  return PAGES[h] ? h : h.startsWith('cal:') ? 'cal' : 'dashboard';
 };
-
-function storedViewer() {
-  try { return getPerson(localStorage.getItem('tr-viewer')) ? localStorage.getItem('tr-viewer') : 'u-ramitha'; } catch { return 'u-ramitha'; }
-}
 
 export default function App() {
   const [page, setPageState] = useState(pageFromHash);
   // Labels show by default on wider screens so sections like Call Calibration are easy to find.
   const [open, setOpen] = useState(() => window.innerWidth >= 900);
   const [week, setWeek] = useState(WEEKS[1]);
-  // Demo sign-in: the look-alike has no real accounts, so Call Calibration lets you switch user.
-  const [viewer, setViewerState] = useState(storedViewer);
   const setPage = (p) => {
     setPageState(p);
     window.history.pushState(null, '', `#${p}`);
     window.scrollTo(0, 0);
-  };
-  const setViewer = (v) => {
-    setViewerState(v);
-    try { localStorage.setItem('tr-viewer', v); } catch { /* ignore */ }
-    if (page.startsWith('cal:')) setPage('cal:assigned');
   };
   useEffect(() => {
     const onPop = () => setPageState(pageFromHash());
@@ -459,10 +446,8 @@ export default function App() {
   const Page = PAGES[page];
   return (
     <main className="app">
-      <Sidebar page={page} setPage={setPage} open={open} setOpen={setOpen} viewer={viewer} />
-      <div className="content">
-        {page.startsWith('cal:') ? <Calibration route={page} go={setPage} viewer={viewer} setViewer={setViewer} /> : <Page week={week} setWeek={setWeek} />}
-      </div>
+      <Sidebar page={page} setPage={setPage} open={open} setOpen={setOpen} />
+      <div className="content"><Page week={week} setWeek={setWeek} /></div>
     </main>
   );
 }
