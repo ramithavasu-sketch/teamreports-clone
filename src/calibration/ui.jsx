@@ -1,66 +1,9 @@
-// Shared UI pieces for the CX QA Calibration pages.
+// Shared pieces for the Call Calibration pages.
 
-import { useState } from 'react';
-import { STATUS, ACTION_STATUS, FORMATS } from './model.js';
+import { useEffect, useRef, useState } from 'react';
+import { callFor } from './model.js';
 
-const ICONS = {
-  logo: 'M9 3h6v3H9zM6 5h3M15 5h3v16H6V5h3M9 13l2 2 4-4',
-  dashboard: 'M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z',
-  calibration: 'M9 3h6v3H9zM6 5h3M15 5h3v16H6V5h3M9 13l2 2 4-4',
-  reports: 'M4 20h16M7 16V9M12 16V5M17 16v-4',
-  guidelines: 'M4 5c3-1.5 5.5-1.5 8 0v15c-2.5-1.5-5-1.5-8 0zM20 5c-3-1.5-5.5-1.5-8 0v15c2.5-1.5 5-1.5 8 0z',
-  back: 'M15 6l-6 6 6 6',
-  plus: 'M12 5v14M5 12h14',
-  lock: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z',
-  eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
-  eyeOff: 'M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.6 6.6C3.8 8.4 2 12 2 12s4 7 10 7a9.6 9.6 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2',
-  check: 'M5 12l5 5 9-10',
-  arrow: 'M5 12h14M13 6l6 6-6 6',
-  list: 'M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1',
-  calendar: 'M4 6h16v14H4zM4 10h16M8 3v5M16 3v5',
-  done: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM8 12l3 3 5-6',
-  clipboard: 'M9 3h6v3H9zM6 5h3M15 5h3v16H6V5h3M9 11h6M9 15h4',
-  flask: 'M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3M7 15h10',
-  reset: 'M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4',
-  trash: 'M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13',
-  external: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
-  video: 'M3 7h12v10H3zM15 10l6-3v10l-6-3',
-  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
-  users: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M16 3.5a4 4 0 0 1 0 7.5M22 21a7 7 0 0 0-4-6.3',
-};
-
-export function Icon({ name, size = 16 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={ICONS[name]} />
-    </svg>
-  );
-}
-
-export function StatusBadge({ status }) {
-  return <span className={`cx-badge st-${status}`}>{STATUS[status]}</span>;
-}
-
-export function FormatBadge({ format }) {
-  return <span className={`cx-badge fmt-${format}`}>{FORMATS[format]?.name}</span>;
-}
-
-export function ActionBadge({ status }) {
-  return <span className={`cx-badge act-${status}`}>{ACTION_STATUS[status]}</span>;
-}
-
-export function Verdict({ value, highlight }) {
-  if (!value) return <span className="cx-muted">—</span>;
-  return <span className={`cx-verdict ${value === 'Good Job' ? 'good' : 'notyet'} ${highlight ? 'diff' : ''}`}>{value}</span>;
-}
-
-export function Finding({ value }) {
-  return <span className={`cx-finding ${value === 'Met' ? 'met' : 'notmet'}`}>{value}</span>;
-}
-
-export function Locked() {
-  return <span className="cx-locked"><Icon name="lock" size={12} /> Submitted · Locked</span>;
-}
+export const go = (path) => { window.location.hash = `#/${path}`; window.scrollTo(0, 0); };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const fmtDate = (d) => {
@@ -68,90 +11,110 @@ export const fmtDate = (d) => {
   const [y, m, day] = d.slice(0, 10).split('-').map(Number);
   return `${day} ${MONTHS[m - 1]} ${y}`;
 };
-export const fmtTime = (t) => {
-  if (!t) return '';
-  const [h, m] = t.split(':').map(Number);
-  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
-};
 export const fmtStamp = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
-  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${fmtTime(`${d.getHours()}:${d.getMinutes()}`)}`;
+  const h = d.getHours();
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${((h + 11) % 12) + 1}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 };
 
-export function PageHead({ eyebrow, title, sub, children }) {
+export function Header({ eyebrow, title, desc, children }) {
   return (
-    <div className="cx-pagehead">
-      <div>
-        {eyebrow && <div className="cx-eyebrow">{eyebrow}</div>}
-        <h1>{title}</h1>
-        {sub && <p className="cx-sub">{sub}</p>}
-      </div>
-      {children && <div className="cx-pagehead-actions">{children}</div>}
+    <div className="tr-head">
+      <div><div className="tr-eyebrow">{eyebrow}</div><h1>{title}</h1>{desc && <p>{desc}</p>}</div>
+      {children && <div className="tr-head-actions">{children}</div>}
     </div>
   );
 }
 
-export function Card({ title, sub, right, children, className = '' }) {
+export function Metric({ title, label, value, blue }) {
+  return <div className="tr-metric"><h3>{title}</h3><div className="key">{label}</div><div className={`val ${blue ? 'blue' : ''}`}>{value}</div></div>;
+}
+
+export function Panel({ title, tag, children, className = '' }) {
   return (
-    <section className={`cx-card ${className}`}>
-      {(title || right) && (
-        <div className="cx-card-head">
-          <div>{title && <h2>{title}</h2>}{sub && <p className="cx-muted">{sub}</p>}</div>
-          {right}
-        </div>
-      )}
-      <div className="cx-card-body">{children}</div>
+    <section className={`tr-panel ${className}`}>
+      {(title || tag) && <div className="tr-panel-head"><h2>{title}</h2>{tag}</div>}
+      {children}
     </section>
   );
 }
 
-export function Stat({ label, value, sub, icon, tone = 'blue' }) {
-  return (
-    <div className="cx-stat">
-      <div className="cx-stat-top"><span>{label}</span>{icon && <span className={`cx-stat-icon ${tone}`}><Icon name={icon} /></span>}</div>
-      <b>{value}</b>
-      {sub && <small>{sub}</small>}
-    </div>
-  );
+export const Tag = ({ tone = '', children }) => <span className={`tr-tag ${tone}`}>{children}</span>;
+export const StatusTag = ({ status }) => <Tag tone={status.tone}>{status.label}</Tag>;
+export function VerdictTag({ value }) {
+  if (!value) return <Tag>—</Tag>;
+  return <Tag tone={value === 'Good' ? 'green' : 'red'}>{value === 'Good' ? '✓ Good' : '✕ Not Yet'}</Tag>;
+}
+
+export function Notice({ tone = '', children }) {
+  return <div className={`tr-notice ${tone}`}>{children}</div>;
 }
 
 export function ErrorNote({ error }) {
-  if (!error) return null;
-  return <div className="cx-error" role="alert">{error.message || String(error)}</div>;
+  return error ? <div className="tr-notice bad" role="alert">{error.message || String(error)}</div> : null;
 }
 
-export function Empty({ title, children }) {
-  return <div className="cx-empty"><b>{title}</b>{children && <p className="cx-muted">{children}</p>}</div>;
+// The label wraps a single input/select/textarea so screen readers announce
+// it; anything else (read-only values, checkbox lists) is a labelled group.
+export function Field({ label, children }) {
+  if (!['input', 'select', 'textarea'].includes(children?.type)) return <div className="tr-field" role="group" aria-label={label}><span className="tr-field-label">{label}</span>{children}</div>;
+  return <label className="tr-field"><span className="tr-field-label">{label}</span>{children}</label>;
 }
 
-// Confirmation dialog: { title, body, confirm, onConfirm }
-export function Confirm({ dialog, onClose }) {
-  const [error, setError] = useState(null);
+export function VerdictPicker({ value, onChange, label }) {
   return (
-    <div className="cx-modal-bg" onClick={onClose}>
-      <div className="cx-modal" role="dialog" aria-modal="true" aria-label={dialog.title} onClick={(e) => e.stopPropagation()}>
-        <h3>{dialog.title}</h3>
-        {dialog.body && <p className="cx-muted">{dialog.body}</p>}
-        <ErrorNote error={error} />
-        <div className="cx-modal-actions">
-          <button className="cx-btn ghost" onClick={onClose}>Cancel</button>
-          <button className="cx-btn" onClick={() => { try { dialog.onConfirm(); onClose(); } catch (e) { setError(e); } }}>{dialog.confirm || 'Confirm'}</button>
-        </div>
-      </div>
+    <div className="tr-radio-row" role="radiogroup" aria-label={label}>
+      {['Good', 'Not Yet'].map((v) => (
+        <button key={v} type="button" role="radio" aria-checked={value === v}
+          className={`tr-verdict ${value === v ? `selected ${v === 'Good' ? 'good' : 'notyet'}` : ''}`} onClick={() => onChange(v)}>
+          {v === 'Good' ? '✓ Good' : '✕ Not Yet'}
+        </button>
+      ))}
     </div>
   );
 }
 
-export function Toggle({ options, value, onChange, disabled, className = '', label }) {
+// Placeholder player: a real build loads the recording from Call Library by Connection ID.
+export function CallPlayer({ connectionId }) {
+  const c = callFor(connectionId) || { line: 'Unknown call', date: '', duration: '00:00' };
+  const [mm, ss] = c.duration.split(':').map(Number);
+  const total = mm * 60 + ss;
+  const [pos, setPos] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const timer = useRef(null);
+  useEffect(() => {
+    if (!playing) return undefined;
+    timer.current = setInterval(() => setPos((p) => {
+      if (p + 1 >= total) { setPlaying(false); return total; }
+      return p + 1;
+    }), 1000);
+    return () => clearInterval(timer.current);
+  }, [playing, total]);
+  const t = (n) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`;
   return (
-    <div className={`cx-toggle ${className}`} role="radiogroup" aria-label={label}>
-      {options.map((o) => (
-        <button key={o} type="button" role="radio" aria-checked={value === o} disabled={disabled}
-          className={`${value === o ? 'on' : ''} v-${o.replace(/\W/g, '').toLowerCase()}`} onClick={() => onChange(o)}>
-          <span className="dot" />{o}
-        </button>
-      ))}
+    <Panel title="Call recording" tag={<Tag>Connection ID: {connectionId}</Tag>}>
+      <p className="tr-muted tiny">{c.line} · {fmtDate(c.date)} · {c.duration} · Prototype player</p>
+      <div className="tr-playbar">
+        <button className="tr-play" onClick={() => setPlaying(!playing)} aria-label={playing ? 'Pause sample recording' : 'Play sample recording'}>{playing ? 'Ⅱ' : '▶'}</button>
+        <div className="tr-track-wrap">
+          <div className="tr-track"><div style={{ width: `${(pos / total) * 100}%` }} /></div>
+          <div className="tr-times"><span>{t(pos)}</span><span>{c.duration}</span></div>
+        </div>
+        <button className="secondary small" onClick={() => setPos(Math.min(total, pos + 10))}>+10s</button>
+      </div>
+      <Notice tone="warn">The player is a placeholder. In Team Reports it should load the real recording from Call Library using the Connection ID.</Notice>
+    </Panel>
+  );
+}
+
+export function Modal({ title, eyebrow, onClose, children }) {
+  return (
+    <div className="tr-modal-back" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <section className="tr-modal" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="tr-modal-head"><div><div className="tr-eyebrow">{eyebrow}</div><h2>{title}</h2></div><button className="secondary small" onClick={onClose}>Close</button></div>
+        {children}
+      </section>
     </div>
   );
 }
