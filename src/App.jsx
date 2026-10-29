@@ -12,13 +12,12 @@ const ICON_PATHS = {
   report: 'M6 3h12v18H6zM9 15v2M12 12v5M15 9v8',
   box: 'M5 3h14v18H5zM8 7h8M8 11h8M8 15h5',
   tiers: 'M6 3h12v18H6zM9 7h6v3H9zM9 13h1M12 13h1M15 13h0M9 17h1M12 17h1',
-  cal: 'M3 12h3l2-5 3 10 3-8 2 3h5M4 20h16',
   callguard: 'M12 3 19 6v5c0 4.5-3 8-7 9.5C8 19 5 15.5 5 11V6zM8.5 12h2l1-2.5 2 5 1-2.5h1',
 };
 
 const NAV = [
   ['dashboard', 'Dashboard'], ['evals', 'My Evals'], ['scrub', 'Call Scrubbing'], ['audit', 'Team Audit'],
-  ['cal', 'Call Calibration'], ['callguard', 'CallGuard AI'],
+  ['callguard', 'CallGuard AI'],
   ['setup', 'Setup Week'], ['perf', 'Performance'], ['form', 'Attendance form'],
   ['report', 'Attendance Report'], ['box', 'Box Score'], ['tiers', 'Tiers Calculator'],
 ];
@@ -410,26 +409,16 @@ function CallGuard() {
   );
 }
 
-// Call Calibration lives on its own page (/call-calibration/) so it can be linked
-// from anywhere; Team Reports shows it in a frame.
-function CallCalibration() {
-  return (
-    <div className="callguard-frame">
-      <iframe title="CX QA Calibration" src={`${import.meta.env.BASE_URL}call-calibration/?embed=1`} />
-    </div>
-  );
-}
-
-const PAGES = { dashboard: Dashboard, callguard: CallGuard, cal: CallCalibration, evals: MyEvals, scrub: CallScrubbing, audit: TeamAudit, setup: SetupWeek, perf: Performance, form: AttendanceForm, report: AttendanceReport, box: BoxScore, tiers: TiersCalculator };
+const PAGES = { dashboard: Dashboard, callguard: CallGuard, evals: MyEvals, scrub: CallScrubbing, audit: TeamAudit, setup: SetupWeek, perf: Performance, form: AttendanceForm, report: AttendanceReport, box: BoxScore, tiers: TiersCalculator };
 
 const pageFromHash = () => {
   const h = decodeURIComponent(window.location.hash.slice(1));
-  return PAGES[h] ? h : h.startsWith('cal:') ? 'cal' : 'dashboard';
+  return PAGES[h] ? h : 'dashboard';
 };
 
 export default function App() {
   const [page, setPageState] = useState(pageFromHash);
-  // Labels show by default on wider screens so sections like Call Calibration are easy to find.
+  // Labels show by default on wider screens so every section is easy to find.
   const [open, setOpen] = useState(() => window.innerWidth >= 900);
   const [week, setWeek] = useState(WEEKS[1]);
   const setPage = (p) => {

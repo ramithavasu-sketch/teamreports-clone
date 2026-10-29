@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+Call-Calibration-Prototype.html
+
+# Call Calibration prototype: kept on this computer only, not on GitHub
+src/calibration/
+tests/calibration.test.js
+call-calibration/
+scripts/build-standalone.mjs
